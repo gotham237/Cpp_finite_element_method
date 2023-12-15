@@ -16,6 +16,7 @@ struct elemUniw {
     double** arrKsi;
     double** arrEta;
     Surface surface[4];
+    double** tabN;
 
     elemUniw(int integralPoints)
     {
@@ -24,10 +25,12 @@ struct elemUniw {
 
         arrKsi = new double* [N];
         arrEta = new double* [N];
+        tabN = new double* [N];
 
         for (int i = 0; i < N; i++) {
             arrKsi[i] = new double[4];
             arrEta[i] = new double[4];
+            tabN[i] = new double[4];
         }
         //points and wages
         PW pw = metodaGaussa("2d", nP);
@@ -114,6 +117,32 @@ struct elemUniw {
                     surface[i].N[j][2] = 0.25 * (1 + Nodes3[i][j][0]) * (1 + Nodes3[i][j][1]);
                     surface[i].N[j][3] = 0.25 * (1 - Nodes3[i][j][0]) * (1 + Nodes3[i][j][1]);
                 }
+            }
+        }
+
+        double NodesC[4][2] = {
+                    {-1.0 / sqrt(3.0), -1.0 / sqrt(3.0)}, {1.0 / sqrt(3.0), -1.0 / sqrt(3.0)},
+                    {-1.0 / sqrt(3.0), 1.0 / sqrt(3)}, {1.0 / sqrt(3.0) , 1.0 / sqrt(3.0)}
+        };
+
+        double NodesC3[9][2] = {
+            {-sqrt(3.0 / 5.0), -sqrt(3.0 / 5.0)}, {0.0, -sqrt(3.0 / 5.0)}, {sqrt(3.0 / 5.0), -sqrt(3.0 / 5.0)},
+            {-sqrt(3.0 / 5.0), 0.0}, {0.0, 0.0}, {sqrt(3.0 / 5.0), 0.0},
+            {-sqrt(3.0 / 5.0), sqrt(3.0 / 5.0)}, {0.0, sqrt(3.0 / 5.0)}, {sqrt(3.0 / 5.0), sqrt(3.0 / 5.0)},
+        };
+
+        for (int i = 0; i < N; i++) {
+            if (nP == 2) {
+                tabN[i][0] = 0.25 * (1 - NodesC[i][0]) * (1 - NodesC[i][1]);
+                tabN[i][1] = 0.25 * (1 + NodesC[i][0]) * (1 - NodesC[i][1]);
+                tabN[i][2] = 0.25 * (1 + NodesC[i][0]) * (1 + NodesC[i][1]);
+                tabN[i][3] = 0.25 * (1 - NodesC[i][0]) * (1 + NodesC[i][1]);
+            }
+            else if(nP == 3) {
+                tabN[i][0] = 0.25 * (1 - NodesC3[i][0]) * (1 - NodesC3[i][1]);
+                tabN[i][1] = 0.25 * (1 + NodesC3[i][0]) * (1 - NodesC3[i][1]);
+                tabN[i][2] = 0.25 * (1 + NodesC3[i][0]) * (1 + NodesC3[i][1]);
+                tabN[i][3] = 0.25 * (1 - NodesC3[i][0]) * (1 + NodesC3[i][1]);
             }
         }
 

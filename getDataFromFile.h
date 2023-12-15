@@ -2,11 +2,14 @@
 #ifndef GET_DATA_FROM_FILE_H  // This is an include guard to prevent multiple inclusion
 #define GET_DATA_FROM_FILE_H 
 
+#define NUM_OF_POINTS 2
+
 #include <iostream>
 #include <string>
 #include <fstream>
 #include <iomanip>
 #include "elemUniw.h"
+#include "getDataFromFile.h"
 
 
 using namespace std;
@@ -26,28 +29,31 @@ struct GlobalData
 struct Node
 {
     double x, y;
-    //double temp;
+    double temp;
     int BC;
 };
 
 struct Element
 {
     int ID[4];
-    double** H;
+    double H[4][4];
     double Hbc[4][4];
     double P[4];
+    double C[4][4];
 
-    Element() : H(nullptr) {
+    Element() {
         ID[0] = 0, ID[1] = 0, ID[2] = 0, ID[3] = 0;
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
                 Hbc[i][j] = 0;
+                C[i][j] = 0;
+                H[i][j] = 0;
             }
             P[i] = 0;
         }
     }
 
-    void createElem(Node* tNode, int integralPoints, double conductivity, double alpha, double tot)
+    void createElem(Node* tNode, int integralPoints, GlobalData& globalData)
     {
         /*double tabX[4] = { 0.0 , 0.025, 0.025, 0.0 };
         double tabY[4] = { 0.0, 0.0, 0.025, 0.025 };*/
@@ -61,12 +67,10 @@ struct Element
 
         double** dNdx = new double* [nP * nP];
         double** dNdy = new double* [nP * nP];
-        H = new double* [4];
 
         for (int k = 0; k < nP * nP; k++) {
             dNdx[k] = new double[4];
             dNdy[k] = new double[4];
-            H[k] = new double[4];
         }
 
         for (int m = 0; m < 4; m++) {
@@ -83,36 +87,51 @@ struct Element
             double dydEta = elementUniw.arrEta[i][0] * tabY[0] + elementUniw.arrEta[i][1] * tabY[1] + elementUniw.arrEta[i][2] * tabY[2] + elementUniw.arrEta[i][3] * tabY[3];
             double dydKsi = elementUniw.arrKsi[i][0] * tabY[0] + elementUniw.arrKsi[i][1] * tabY[1] + elementUniw.arrKsi[i][2] * tabY[2] + elementUniw.arrKsi[i][3] * tabY[3];
 
-            double wyznacznik[2][2] = { {dxdKsi, dydKsi}
-                                      , {dxdEta, dydEta} };
+            //double wyznacznik[2][2] = { {dxdKsi, dydKsi}
+            //                         , {dxdEta, dydEta} };
 
-            double det = dxdKsi * dydEta - dydKsi * dxdEta;
+            double wyznacznik[2][2] = { {dydEta, -dydKsi}
+                                      , {-dxdEta, dxdKsi} };
+
+            double det = dxdKsi * dydEta - (-dydKsi * (-dxdEta));
             //cout << "det: " << det << "\n";
 
 
-            for (int j = 0; j < nP * nP; j++)
+            for (int j = 0; j < 4; j++)
             {
                 dNdx[i][j] = 1.0 / det * (wyznacznik[0][0] * elementUniw.arrKsi[i][j] + wyznacznik[0][1] * elementUniw.arrEta[i][j]);
                 dNdy[i][j] = 1.0 / det * (wyznacznik[1][0] * elementUniw.arrKsi[i][j] + wyznacznik[1][1] * elementUniw.arrEta[i][j]);
             }
 
-            //H
+            //H i C
+            double *wages = new double[nP * nP];
+            if (nP == 2) {
+                wages[0] = 1;
+                wages[1] = 1;
+                wages[2] = 1;
+                wages[3] = 1;
+            }
+            else if (nP == 3) {
+                wages[0] = pw.W[0] * pw.W[0];
+                wages[1] = pw.W[0] * pw.W[1];
+                wages[2] = pw.W[0] * pw.W[2];
+
+                wages[3] = pw.W[1] * pw.W[0];
+                wages[4] = pw.W[1] * pw.W[1];
+                wages[5] = pw.W[1] * pw.W[2];
+
+                wages[6] = pw.W[2] * pw.W[0];
+                wages[7] = pw.W[2] * pw.W[1];
+                wages[8] = pw.W[2] * pw.W[2];
+            }
+
             for (int j = 0; j < 4; j++) {
                 for (int k = 0; k < 4; k++) {
-                    H[j][k] += conductivity * (dNdx[i][j] * dNdx[i][k] + dNdy[i][j] * dNdy[i][k]) * det;
+                    H[j][k] += wages[i] * globalData.conductivity * (dNdx[i][j] * dNdx[i][k] + dNdy[i][j] * dNdy[i][k]) * det;
+                    C[j][k] += wages[i] * globalData.specificHeat * globalData.density * (elementUniw.tabN[i][j] * elementUniw.tabN[i][k]) * det;
                 }
             }
 
-            /*cout << "H" << i << endl;
-            for (int m = 0; m < 4; m++) {
-                
-                for (int l = 0; l < 4; l++) {
-                    cout << H[m][l] << "  ";
-                }
-                cout << "\n";
-            }*/
-            
-            
         }
 
         for (int j = 0; j < 4; j++) {
@@ -139,30 +158,31 @@ struct Element
                 for (int j = 0; j < 4; j++) {
                     for (int k = 0; k < 4; k++) {
                         for (int m = 0; m < nP; m++) {
-                            Hbc[j][k] += alpha * pw.W[m] * (elementUniw.surface[i].N[m][j] * elementUniw.surface[i].N[m][k]) * detJ;
+                            Hbc[j][k] += globalData.alfa * pw.W[m] * (elementUniw.surface[i].N[m][j] * elementUniw.surface[i].N[m][k]) * detJ;
                         }
                     }
                 }
 
+
                 //P
                 for (int m = 0; m < nP; m++) {
                     for (int j = 0; j < 4; j++) {
-                        P[j] += alpha * pw.W[m] * elementUniw.surface[i].N[m][j] * tot * detJ;
+                        P[j] += globalData.alfa * pw.W[m] * elementUniw.surface[i].N[m][j] * globalData.tot * detJ;
                     }
                 }
 
             }
+
+            
         }
 
-        /*cout << "H" << endl;
-        for (int m = 0; m < 4; m++) {
-
-            for (int l = 0; l < 4; l++) {
-                cout << H[m][l] << "  ";
+        // H lokalne z HBC i C/dT i P + C/dT * {t0}
+        for (int j = 0; j < 4; j++) {
+            for (int k = 0; k < 4; k++) {
+                H[j][k] += Hbc[j][k] + (C[j][k] / globalData.simulationStepTime);
+                //P[j] += (C[j][k] / globalData.simulationStepTime) * globalData.initialTemp;
             }
-            cout << "\n";
-        }*/
-
+        }
 
         for (int j = 0; j < nP * nP; j++) {
             delete[] dNdx[j];
@@ -195,6 +215,15 @@ struct Element
         cout << "P" << index << ": \n";
         for (int i = 0; i < 4; i++) {
             cout << P[i] << "  ";
+        }
+        cout << "\n\n";
+
+        cout << "C" << index << ": \n";
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 4; j++) {
+                cout << C[i][j] << "  ";
+            }
+            cout << "\n";
         }
         cout << "\n\n";
     }
@@ -254,7 +283,7 @@ void getData(const string& filename, GlobalData& globalData, Grid& grid)
                 inputFile >> key >> t >> grid.tNode[i].y;
                 t.pop_back();
                 grid.tNode[i].x = stod(t);
-                //grid.tNode[i].temp = 0; // dodac pozniej odpowiednia temperature
+                grid.tNode[i].temp = globalData.initialTemp;
             }
         }
         else if (key == "*BC")
@@ -297,7 +326,7 @@ void getData(const string& filename, GlobalData& globalData, Grid& grid)
                 grid.tElem[i].ID[2] = stod(three);
                 grid.tElem[i].ID[3] = stod(four);
 
-                grid.tElem[i].createElem(grid.tNode, 2, globalData.conductivity, globalData.alfa, globalData.tot);
+                grid.tElem[i].createElem(grid.tNode, NUM_OF_POINTS, globalData);
                 //grid.tElem[i].printElement();
             }
         }
@@ -348,8 +377,6 @@ void showGridData(Grid& grid)
     }
 }
 
-void showElementData(Grid& grid) {
 
-}
 
 #endif
